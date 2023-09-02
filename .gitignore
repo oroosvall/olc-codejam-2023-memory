@@ -40,3 +40,6 @@ olc-memory/olc-memory/olc-memory.vcxproj.user
 olc-memory/olc-memory/x64/Debug/olc-memory.exe.recipe
 olc-memory/olc-memory/x64/Debug/olc-memory.ilk
 olc-memory/olc-memory/x64/Debug/olc-memory.log
+olc-memory/olc-memory/x64/Debug/main.obj.enc
+olc-memory/olc-memory/x64/Debug/olc-memory.Build.CppClean.log
+olc-memory/olc-memory/x64/Debug/olc-memory.vcxproj.FileListAbsolute.txt

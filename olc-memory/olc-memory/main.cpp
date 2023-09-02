@@ -155,6 +155,11 @@ public:
     {
     }
 
+    void setTile(olc::Decal* tile)
+    {
+        mTile = tile;
+    }
+
     void loadData(const olc::vi2d& size, const std::vector<olc::Decal*>& data)
     {
         mGridSize = size;
@@ -206,6 +211,7 @@ public:
             for (int y = 0; y < mGridSize.y; y++)
             {
                 olc::Decal* d = mSolution[y * mGridSize.x + x];
+                pge->DrawDecal(start, mTile);
                 if (d)
                 {
                     pge->DrawDecal(start, d);
@@ -230,6 +236,7 @@ public:
             int y = start.y;
             for (int y = 0; y < mGridSize.y; y++)
             {
+                pge->DrawDecal(start, mTile);
                 if (x == mHoverIndex.x && y == mHoverIndex.y)
                 {
                     hoverPos = start;
@@ -274,6 +281,20 @@ public:
         return score;
     }
 
+    int getMaxScore()
+    {
+        int score = 0;
+        for (int i = 0; i < mSolution.size(); i++)
+        {
+            if (mSolution[i])
+            {
+                score++;
+            }
+        }
+
+        return score;
+    }
+
 private:
     olc::vi2d mCenter;
     olc::vi2d mSize;
@@ -283,8 +304,116 @@ private:
     std::vector<olc::Decal*> mData;
 
     olc::vi2d mHoverIndex;
+    olc::Decal* mTile = nullptr;
     olc::Pixel mBorder = { 0,0,0,255 };
     olc::Pixel mHoverBorder = { 255,255,255,255 };
+
+};
+
+struct LevelData
+{
+    float mTime;
+    std::vector<olc::Decal*> mDecals;
+    int mSizeX;
+    int mSizeY;
+    std::vector<olc::Decal*> mLevelGrid;
+};
+
+class LevelLoader
+{
+public:
+    LevelLoader(std::string mainFile)
+    {
+        std::ifstream inFile(mainFile);
+        if (inFile.is_open())
+        {
+            std::string line;
+            while (!inFile.eof())
+            {
+                std::getline(inFile, line);
+                mLevelFiles.push_back(line);
+            }
+        }
+    }
+
+    void loadDecals()
+    {
+        mDecals.resize(4);
+        mDecals[0].Load("decals/StarShape.png");
+        mDecals[1].Load("decals/RombShape.png");
+        mDecals[2].Load("decals/FourLines.png");
+        mDecals[3].Load("decals/Triangle.png");
+    }
+
+    int getNumLevels() const
+    {
+        return (int)mLevelFiles.size();
+    }
+
+    void addGridDecal(LevelData& l, int index)
+    {
+        if (index == -1)
+        {
+            l.mLevelGrid.push_back(nullptr);
+        }
+        else
+        {
+            l.mLevelGrid.push_back(mDecals[index].Decal());
+        }
+    }
+
+    LevelData loadLevel(int index)
+    {
+        LevelData l{};
+        std::ifstream inFile(mLevelFiles[index]);
+        if (inFile.is_open())
+        {
+            std::string timerStr;
+            std::getline(inFile, timerStr);
+            l.mTime = std::atof(timerStr.c_str());
+
+            std::string decalList;
+            std::getline(inFile, decalList);
+            size_t pos = 0;
+            while ((pos = decalList.find(",")) != std::string::npos)
+            {
+                std::string token = decalList.substr(0, pos);
+                l.mDecals.push_back(mDecals[std::atoi(token.c_str())].Decal());
+                decalList.erase(0, pos + 1);
+            }
+            l.mDecals.push_back(mDecals[std::atoi(decalList.c_str())].Decal());
+
+            std::string sizeStr;
+            std::getline(inFile, sizeStr);
+            pos = 0;
+            if ((pos = sizeStr.find(",")) != std::string::npos)
+            {
+                std::string token = sizeStr.substr(0, pos);
+                l.mSizeX = std::atoi(token.c_str());
+                sizeStr.erase(0, pos + 1);
+            }
+            l.mSizeY = std::atoi(sizeStr.c_str());
+
+            for (size_t i = 0; i < l.mSizeY; i++)
+            {
+                std::string gridStr;
+                std::getline(inFile, gridStr);
+                pos = 0;
+                while ((pos = gridStr.find(",")) != std::string::npos)
+                {
+                    std::string token = gridStr.substr(0, pos);
+                    addGridDecal(l, std::atoi(token.c_str()));
+                    gridStr.erase(0, pos + 1);
+                }
+                addGridDecal(l, std::atoi(gridStr.c_str()));
+            }
+        }
+        return l;
+    }
+
+private:
+    std::vector<std::string> mLevelFiles;
+    std::vector<olc::Renderable> mDecals;
 
 };
 
@@ -305,6 +434,8 @@ public:
         sAppName = "Memory";
     }
 
+    LevelLoader mLevelLoader = { "levels.txt" };
+
     olc::Pixel mBackgroundColor = { 255, 106, 0, 255 };
     ProgressBar mTimerBar = { {50,10}, {width - 100, 10}, 0.0f, 100.0f };
     ShapeBar mShapeBar = { {width / 2, height - 50}, {32, 32} };
@@ -312,29 +443,23 @@ public:
 
     GameState mGameState = GameState::WaitInput;
 
-    olc::Renderable mWhiteShape;
-    olc::Renderable mRedShape;
-    olc::Renderable mGreenShape;
-    olc::Renderable mBlueShape;
+    olc::Renderable mGridTile;
 
     float mScrollCoolDown = 0.0f;
     const float mScrollTime = 0.05f;
 
+    int mLevelIndex = 0;
+
+    std::vector<olc::Renderable> mShapes;
+
 public:
     bool OnUserCreate() override
     {
-        mWhiteShape.Load("white.png");
-        mRedShape.Load("red.png");
-        mGreenShape.Load("green.png");
-        mBlueShape.Load("blue.png");
+        mLevelLoader.loadDecals();
+        mGridTile.Load("decals/GridTile.png");
+        mPlayGrid.setTile(mGridTile.Decal());
 
         mTimerBar.setValue(50.0f);
-        mShapeBar.add(mWhiteShape.Decal());
-        mShapeBar.add(mRedShape.Decal());
-        mShapeBar.add(mGreenShape.Decal());
-        mShapeBar.add(mBlueShape.Decal());
-        auto d = { mWhiteShape.Decal(), mRedShape.Decal(), mGreenShape.Decal(), mBlueShape.Decal() };
-        mPlayGrid.loadData({ 2,2 }, d);
         return true;
     }
 
@@ -351,9 +476,19 @@ public:
             DrawStringPropDecal(pos, txt);
             if (GetKey(olc::Key::SPACE).bPressed)
             {
+                LevelData level = mLevelLoader.loadLevel(mLevelIndex);
+
+                mShapeBar.clear();
+                for (auto dec : level.mDecals)
+                {
+                    mShapeBar.add(dec);
+                }
+                mShapeBar.select(0);
+                mPlayGrid.loadData({ level.mSizeX, level.mSizeY }, level.mLevelGrid);
+
                 mGameState = GameState::Present;
                 mTimerBar.setValue(0.0f);
-                mTimerBar.setMax(1.0f);
+                mTimerBar.setMax(level.mTime);
             }
         }
         break;
@@ -422,8 +557,9 @@ public:
         case GameState::Score:
         {
             int score = mPlayGrid.getScrore();
+            int maxScore = mPlayGrid.getMaxScore();
 
-            std::string scoreText = "You scored : " + std::to_string(score);
+            std::string scoreText = "You scored : " + std::to_string(score) + "/" + std::to_string(maxScore);
             auto size = GetTextSizeProp(scoreText);
             olc::vf2d textPos = { float((width / 2) - (size.x / 2)) , float((height / 2) - (size.y / 2)) };
             DrawStringPropDecal(textPos, scoreText);
