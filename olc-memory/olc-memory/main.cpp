@@ -470,6 +470,7 @@ public:
     int mMaxScore = 0;
 
     std::vector<olc::Renderable> mShapes;
+    olc::Renderable mIntro;
     olc::Renderable mBackground;
     olc::Renderable mDemoShape;
 
@@ -477,18 +478,21 @@ public:
 
     float mFade = 0.0;
 
+    olc::Decal* mActiveBg;
+
 public:
     bool OnUserCreate() override
     {
+        mIntro.Load("data/decals/Intro.png");
         mBackground.Load("data/decals/Background.png");
 
-        olc::vi2d size = mBackground.Sprite()->Size();
-        olc::Pixel* data = mBackground.Sprite()->GetData();
+        olc::vi2d size = mIntro.Sprite()->Size();
+        olc::Pixel* data = mIntro.Sprite()->GetData();
         for (int i = 0; i < size.x * size.y; i++)
         {
             data[i].a = 0;
         }
-        mBackground.Decal()->Update();
+        mIntro.Decal()->Update();
 
         mDemoShape.Load("data/decals/StarShape.png");
         mLevelLoader.loadDecals();
@@ -501,13 +505,14 @@ public:
         mShapeBar.add(mDemoShape.Decal());
 
         mTimerBar.setValue(50.0f);
+        mActiveBg = mIntro.Decal();
         return true;
     }
 
     bool OnUserUpdate(float fElapsedTime) override
     {
         //FillRectDecal({ 0,0 }, { width, height }, mBackgroundColor);
-        DrawDecal({ 0,0 }, mBackground.Decal());
+        DrawDecal({ 0,0 }, mActiveBg);
 
         if (mGameState != GameState::End && mGameState != GameState::Intro && mGameState != GameState::Tutorial && mGameState != GameState::FadeIn)
         {
@@ -528,23 +533,24 @@ public:
                 mFade = 0.5f;
                 mGameState = GameState::Intro;
             }
-            olc::vi2d size = mBackground.Sprite()->Size();
-            olc::Pixel* data = mBackground.Sprite()->GetData();
+            olc::vi2d size = mIntro.Sprite()->Size();
+            olc::Pixel* data = mIntro.Sprite()->GetData();
             for (int i = 0; i < size.x * size.y; i++)
             {
                 data[i].a = int(2.0f * mFade * 255.0f);
             }
-            mBackground.Decal()->Update();
+            mIntro.Decal()->Update();
         }
         break;
         case GameState::Intro:
         {
-            std::string txt = "This is a simple memory game made with the Olc pixel game engine.\n\nPress Space to continue to the How to play.";
+            std::string txt = "Press Space to continue to the How to play.";
             auto size = GetTextSizeProp(txt);
             olc::vf2d pos = { float((width / 2) - (size.x / 2)) , float((height / 2) - (size.y / 2)) };
             DrawStringPropDecal(pos, txt);
             if (GetKey(olc::Key::SPACE).bPressed)
             {
+                mActiveBg = mBackground.Decal();
                 mGameState = GameState::Tutorial;
             }
         }
