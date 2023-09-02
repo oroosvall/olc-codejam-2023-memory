@@ -1,7 +1,15 @@
 #include "olcPixelGameEngine.h"
+#include "olc_PGEX_SplashScreen.h"
 
 const int width = 512;
 const int height = 512;
+
+std::string formatNum(float f)
+{
+    std::string num_text = std::to_string(f);
+    std::string rounded = num_text.substr(0, num_text.find(".") + 3);
+    return rounded;
+}
 
 class ProgressBar
 {
@@ -331,6 +339,8 @@ public:
             while (!inFile.eof())
             {
                 std::getline(inFile, line);
+                // Remove crappy return
+                line.erase(std::remove(line.begin(), line.end(), '\r'), line.end());
                 mLevelFiles.push_back(line);
             }
         }
@@ -339,10 +349,10 @@ public:
     void loadDecals()
     {
         mDecals.resize(4);
-        mDecals[0].Load("decals/StarShape.png");
-        mDecals[1].Load("decals/RombShape.png");
-        mDecals[2].Load("decals/FourLines.png");
-        mDecals[3].Load("decals/Triangle.png");
+        mDecals[0].Load("data/decals/StarShape.png");
+        mDecals[1].Load("data/decals/RombShape.png");
+        mDecals[2].Load("data/decals/FourLines.png");
+        mDecals[3].Load("data/decals/Triangle.png");
     }
 
     int getNumLevels() const
@@ -408,6 +418,7 @@ public:
                 addGridDecal(l, std::atoi(gridStr.c_str()));
             }
         }
+
         return l;
     }
 
@@ -419,10 +430,15 @@ private:
 
 enum class GameState
 {
+    FadeIn,
+    Intro,
+    Tutorial,
+    Load,
     WaitInput,
     Present,
     Play,
-    Score
+    Score,
+    End
 };
 
 class Memory : public olc::PixelGameEngine
@@ -434,14 +450,15 @@ public:
         sAppName = "Memory";
     }
 
-    LevelLoader mLevelLoader = { "levels.txt" };
+    olc::SplashScreen mSplashScreen;
+    LevelLoader mLevelLoader = { "data/levels.txt" };
 
     olc::Pixel mBackgroundColor = { 255, 106, 0, 255 };
-    ProgressBar mTimerBar = { {50,10}, {width - 100, 10}, 0.0f, 100.0f };
+    ProgressBar mTimerBar = { {100,10}, {width - 200, 10}, 0.0f, 100.0f };
     ShapeBar mShapeBar = { {width / 2, height - 50}, {32, 32} };
     PlayGrid mPlayGrid = { {width / 2, height / 2}, {32, 32} };
 
-    GameState mGameState = GameState::WaitInput;
+    GameState mGameState = GameState::FadeIn;
 
     olc::Renderable mGridTile;
 
@@ -449,15 +466,39 @@ public:
     const float mScrollTime = 0.05f;
 
     int mLevelIndex = 0;
+    int mScore = 0;
+    int mMaxScore = 0;
 
     std::vector<olc::Renderable> mShapes;
+    olc::Renderable mBackground;
+    olc::Renderable mDemoShape;
+
+    LevelData mLevelData;
+
+    float mFade = 0.0;
 
 public:
     bool OnUserCreate() override
     {
+        mBackground.Load("data/decals/Background.png");
+
+        olc::vi2d size = mBackground.Sprite()->Size();
+        olc::Pixel* data = mBackground.Sprite()->GetData();
+        for (int i = 0; i < size.x * size.y; i++)
+        {
+            data[i].a = 0;
+        }
+        mBackground.Decal()->Update();
+
+        mDemoShape.Load("data/decals/StarShape.png");
         mLevelLoader.loadDecals();
-        mGridTile.Load("decals/GridTile.png");
+        mGridTile.Load("data/decals/GridTile.png");
         mPlayGrid.setTile(mGridTile.Decal());
+
+        std::vector<olc::Decal*> dec;
+        dec.resize(4 * 4, nullptr);
+        mPlayGrid.loadData({ 4,4 }, dec);
+        mShapeBar.add(mDemoShape.Decal());
 
         mTimerBar.setValue(50.0f);
         return true;
@@ -465,30 +506,105 @@ public:
 
     bool OnUserUpdate(float fElapsedTime) override
     {
-        FillRectDecal({ 0,0 }, { width, height }, mBackgroundColor);
+        //FillRectDecal({ 0,0 }, { width, height }, mBackgroundColor);
+        DrawDecal({ 0,0 }, mBackground.Decal());
+
+        if (mGameState != GameState::End && mGameState != GameState::Intro && mGameState != GameState::Tutorial && mGameState != GameState::FadeIn)
+        {
+            std::string levelText = "Level " + std::to_string(mLevelIndex + 1) + "/" + std::to_string(mLevelLoader.getNumLevels());
+            DrawStringPropDecal({ 10,10, }, levelText);
+
+            std::string scoreText = "Score: " + std::to_string(mScore);
+            DrawStringPropDecal({ 10,25, }, scoreText);
+        }
+
         switch (mGameState)
         {
-        case GameState::WaitInput:
+        case GameState::FadeIn:
         {
-            std::string txt = "Press Space to reveal";
+            mFade += fElapsedTime;
+            if (mFade >= 0.5f)
+            {
+                mFade = 0.5f;
+                mGameState = GameState::Intro;
+            }
+            olc::vi2d size = mBackground.Sprite()->Size();
+            olc::Pixel* data = mBackground.Sprite()->GetData();
+            for (int i = 0; i < size.x * size.y; i++)
+            {
+                data[i].a = int(2.0f * mFade * 255.0f);
+            }
+            mBackground.Decal()->Update();
+        }
+        break;
+        case GameState::Intro:
+        {
+            std::string txt = "This is a simple memory game made with the Olc pixel game engine.\n\nPress Space to continue to the How to play.";
             auto size = GetTextSizeProp(txt);
             olc::vf2d pos = { float((width / 2) - (size.x / 2)) , float((height / 2) - (size.y / 2)) };
             DrawStringPropDecal(pos, txt);
             if (GetKey(olc::Key::SPACE).bPressed)
             {
-                LevelData level = mLevelLoader.loadLevel(mLevelIndex);
+                mGameState = GameState::Tutorial;
+            }
+        }
+        break;
+        case GameState::Tutorial:
+        {
+            mTimerBar.draw(this);
+            mPlayGrid.drawSolution(this);
+            mShapeBar.draw(this);
 
+            std::string timeText = "There will be a timer bar during the presentation,\nincreasing untill full.\nThen the guessing starts.";
+            DrawStringPropDecal({ 100, 25 }, timeText);
+
+            std::string boardText = "The game board is where you will have to place shapes.\nA white highlight will show hovered tile.\nUse left click to place, and right click to clear";
+            DrawStringPropDecal({ 100, (height / 2) + 32 * 2 }, boardText);
+
+            std::string shapeText = "Select a shape with scroll wheel.\nA white outline will highlight the selection.";
+            DrawStringPropDecal({ 100, height - 75 }, shapeText);
+
+            std::string continueText = "Press Space to Begin!";
+            auto size = GetTextSizeProp(continueText);
+            olc::vf2d pos = { float((width / 2) - (size.x / 2)) , float((height / 2) - (size.y / 2)) };
+            DrawStringPropDecal(pos, continueText);
+
+            if (GetKey(olc::Key::SPACE).bPressed)
+            {
+                mGameState = GameState::Load;
+            }
+        }
+        break;
+        case GameState::Load:
+        {
+            mLevelData = mLevelLoader.loadLevel(mLevelIndex);
+            mGameState = GameState::WaitInput;
+        }
+        break;
+        case GameState::WaitInput:
+        {
+            std::string txt = "You will have " + formatNum(mLevelData.mTime) + " s to remember...";
+            auto size = GetTextSizeProp(txt);
+            olc::vf2d pos = { float((width / 2) - (size.x / 2)) , float((height / 2) - (size.y / 2)) };
+            DrawStringPropDecal(pos, txt);
+            std::string txt2 = "Press Space to reveal";
+            size = GetTextSizeProp(txt2);
+            pos = { float((width / 2) - (size.x / 2)) , float((height / 2) - (size.y / 2)) };
+            DrawStringPropDecal(pos + olc::vf2d{ 0.0f,15.0f }, txt2);
+
+            if (GetKey(olc::Key::SPACE).bPressed)
+            {
                 mShapeBar.clear();
-                for (auto dec : level.mDecals)
+                for (auto dec : mLevelData.mDecals)
                 {
                     mShapeBar.add(dec);
                 }
                 mShapeBar.select(0);
-                mPlayGrid.loadData({ level.mSizeX, level.mSizeY }, level.mLevelGrid);
+                mPlayGrid.loadData({ mLevelData.mSizeX, mLevelData.mSizeY }, mLevelData.mLevelGrid);
 
                 mGameState = GameState::Present;
                 mTimerBar.setValue(0.0f);
-                mTimerBar.setMax(level.mTime);
+                mTimerBar.setMax(mLevelData.mTime);
             }
         }
         break;
@@ -570,8 +686,30 @@ public:
             DrawStringPropDecal(textPos, txt);
             if (GetKey(olc::Key::SPACE).bPressed)
             {
-                mGameState = GameState::WaitInput;
+                mScore += score;
+                mMaxScore += maxScore;
+                mGameState = GameState::Load;
+
+                mLevelIndex++;
+                if (mLevelIndex == mLevelLoader.getNumLevels())
+                {
+                    mGameState = GameState::End;
+                }
             }
+        }
+        break;
+        case GameState::End:
+        {
+            std::string txt = "Thank you for playing";
+            auto size = GetTextSizeProp(txt);
+            olc::vf2d pos = { float((width / 2) - (size.x / 2)) , float((height / 2) - (size.y / 2)) };
+            DrawStringPropDecal(pos, txt);
+
+            std::string scoreText = "Your total score was : " + std::to_string(mScore) + "/" + std::to_string(mMaxScore);
+            size = GetTextSizeProp(scoreText);
+            olc::vf2d textPos = { float((width / 2) - (size.x / 2)) , float((height / 2) - (size.y / 2)) };
+            DrawStringPropDecal(pos + olc::vf2d{ 0.0f, 15.0f }, scoreText);
+
         }
         break;
         default:
